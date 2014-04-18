@@ -20,6 +20,7 @@ namespace SpbWalletExport
         private static List<Card> _cards;
         private static List<CardFieldValue> _cardFieldValues;
         private static List<TemplateField> _templateFields;
+        private static List<CardAttachment> _cardAttachments;
 
         private static XDocument _xDoc;
 
@@ -38,6 +39,7 @@ namespace SpbWalletExport
             _cards = _db.Table<Card>().ToList();
             _cardFieldValues = _db.Table<CardFieldValue>().ToList();
             _templateFields = _db.Table<TemplateField>().ToList();
+            _cardAttachments = _db.Table<CardAttachment>().ToList();
 
             _xDoc = new XDocument(new XDeclaration("1.0", "utf-8", "yes"));
             XElement root = new XElement("Root");
@@ -80,6 +82,14 @@ namespace SpbWalletExport
             public byte[] Name { get; set; }
             public string TemplateID { get; set; }
         }
+        [Table("spbwlt_CardAttachment")]
+        public class CardAttachment
+        {
+            public string ID { get; set; }
+            public string CardID { get; set; }
+            public byte[] Name { get; set; }
+            public byte[] Data { get; set; }
+        }
         private static void ProduceCategories(string categoryId, XElement xParent)
         {
             // Process inner categories (folders)
@@ -106,30 +116,52 @@ namespace SpbWalletExport
                 xCard.SetAttributeValue("Name", name);
                 xParent.Add(xCard);
                 ProduceCardFields(card.ID, xCard);
+                ProduceCardAttachments(card.ID, xCard);
             }
         }
         private static void ProduceCardFields(string cardId, XElement xParent)
         {
             // Process cards under given category (folder)
-            foreach (var card in _cardFieldValues.Where(x => x.CardID == cardId))
+            foreach (var field in _cardFieldValues.Where(x => x.CardID == cardId))
             {
                 XElement xFieldValue = new XElement("Field");
 
-                TemplateField templateField = _templateFields.FirstOrDefault(x => x.ID == card.TemplateFieldID);
+                TemplateField templateField = _templateFields.FirstOrDefault(x => x.ID == field.TemplateFieldID);
                 if (templateField != null)
                 {
                     string fieldName = Decrypt(templateField.Name);
                     xFieldValue.SetAttributeValue("Name", fieldName);
                 }
 
-                string fieldValue = Decrypt(card.ValueString);
+                string fieldValue = Decrypt(field.ValueString);
                 xFieldValue.SetAttributeValue("Value", fieldValue);
+
+                xParent.Add(xFieldValue);
+            }
+        }
+        private static void ProduceCardAttachments(string cardId, XElement xParent)
+        {
+            // Process cards under given category (folder)
+            foreach (var attachment in _cardAttachments.Where(x => x.CardID == cardId))
+            {
+                XElement xFieldValue = new XElement("Attachment");
+
+                string attachmentName = Decrypt(attachment.Name);
+                xFieldValue.SetAttributeValue("FileName", attachmentName);
+
+                byte[] data = DecryptRaw(attachment.Data);
+                File.WriteAllBytes(attachmentName, data);
 
                 xParent.Add(xFieldValue);
             }
         }
         private static string Decrypt(byte[] paddingPrefixedBlob)
         {
+            if (paddingPrefixedBlob == null)
+            {
+                return String.Empty;
+            }
+
             using (MemoryStream ms = new MemoryStream(paddingPrefixedBlob, 4, paddingPrefixedBlob.Length - 4))
             {
                 using (CryptoStream cs = new CryptoStream(ms, _decryptor, CryptoStreamMode.Read))
@@ -149,23 +181,31 @@ namespace SpbWalletExport
         //    return Encoding.Unicode.GetString(RawDecrypt(paddingPrefixedBlob)).TrimEnd('\0');
         //}
 
-        //private static byte[] RawDecrypt(byte[] paddingPrefixedBlob)
-        //{
-        //    using (MemoryStream ms = new MemoryStream(paddingPrefixedBlob, 4, paddingPrefixedBlob.Length - 4))
-        //    {
-        //        using (CryptoStream cs = new CryptoStream(ms, _decryptor, CryptoStreamMode.Read))
-        //        {
-        //            using (StreamReader csReader = new StreamReader(cs))
-        //            {
-        //                plaintext = csReader.ReadToEnd();
-        //            }
-        //            byte[] buffer = new byte[paddingPrefixedBlob.Length - 4];
-        //            cs.Read(buffer, 0, buffer.Length);
-        //            Dump("buffer", buffer);
-        //            return buffer;
-        //        }
-        //    }
-        //}
+        private static byte[] DecryptRaw(byte[] paddingPrefixedBlob)
+        {
+            if (paddingPrefixedBlob == null)
+            {
+                return new byte[0];
+            }
+
+            using (MemoryStream ms = new MemoryStream(paddingPrefixedBlob, 4, paddingPrefixedBlob.Length - 4))
+            {
+                using (CryptoStream cs = new CryptoStream(ms, _decryptor, CryptoStreamMode.Read))
+                {
+                    using (MemoryStream msResult = new MemoryStream())
+                    {
+                        cs.CopyTo(msResult);
+                        byte[] buffer = msResult.ToArray();
+                        Dump("buffer", buffer);
+
+                        byte[] b2 = new byte[buffer.Length - 4];
+                        Buffer.BlockCopy(buffer, 4, b2, 0, b2.Length);
+                        return b2;
+                    }
+                }
+            }
+        }
+
         private static byte[] GenerateKey()
         {
             string zeroTerminatedPassword = ConfigurationManager.AppSettings["Password"] + '\0';
@@ -186,7 +226,7 @@ namespace SpbWalletExport
 
         private static void Dump(string name, byte[] array)
         {
-            Debug.WriteLine(name + " (" + array.Length+ ") " + " = " + BitConverter.ToString(array).Replace("-", ""));
+            Debug.WriteLine(name + " (" + array.Length+ ") " + " = " + BitConverter.ToString(array).Replace("-", " "));
         }
     }
 }
