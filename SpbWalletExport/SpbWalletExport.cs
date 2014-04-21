@@ -34,7 +34,8 @@ namespace SpbWalletExport
             Debug.Assert(rijndael.Key != null, "rijndael.Key != null");
             _decryptor = rijndael.CreateDecryptor(rijndael.Key, rijndael.IV);
 
-            _db = new SQLiteConnection(ConfigurationManager.AppSettings["SPBWalletFilePath"]);
+            string sourceFile = ConfigurationManager.AppSettings["SPBWalletFilePath"];
+            _db = new SQLiteConnection(sourceFile);
             _categories = _db.Table<Category>().ToList();
             _cards = _db.Table<Card>().ToList();
             _cardFieldValues = _db.Table<CardFieldValue>().ToList();
@@ -47,7 +48,8 @@ namespace SpbWalletExport
 
             ProduceCategories("", root);
 
-            _xDoc.Save("Export.xml");
+            string targetFile = Path.ChangeExtension(sourceFile, ".xml");
+            _xDoc.Save(targetFile);
         }
 
         [Table("spbwlt_Category")]
@@ -149,8 +151,9 @@ namespace SpbWalletExport
                 string attachmentName = Decrypt(attachment.Name);
                 xFieldValue.SetAttributeValue("FileName", attachmentName);
 
-                byte[] data = DecryptRaw(attachment.Data);
-                File.WriteAllBytes(attachmentName, data);
+                // This does not quite work yet. zlib unpacking need to be implemented.
+                //byte[] data = DecryptRaw(attachment.Data);
+                //File.WriteAllBytes(attachmentName, data);
 
                 xParent.Add(xFieldValue);
             }
