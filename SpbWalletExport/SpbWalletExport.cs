@@ -113,12 +113,20 @@ namespace SpbWalletExport
             foreach (var card in _cards.Where(x => x.ParentCategoryID == categoryId))
             {
                 string name = Decrypt(card.Name);
-                //Debug.WriteLine("    " + name);
                 XElement xCard = new XElement("Card");
                 xCard.SetAttributeValue("Name", name);
                 xParent.Add(xCard);
                 ProduceCardFields(card.ID, xCard);
                 ProduceCardAttachments(card.ID, xCard);
+
+                if (card.Description != null)
+                {
+                    string notes = Decrypt(card.Description);
+                    //Debug.WriteLine("notes:" + notes);
+                    XElement xNotes = new XElement("Notes");
+                    xNotes.SetAttributeValue("Text", notes);
+                    xCard.Add(xNotes);
+                }
             }
         }
         private static void ProduceCardFields(string cardId, XElement xParent)
